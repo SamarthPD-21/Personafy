@@ -1,434 +1,406 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { personaMap, type PersonaId, type PersonaProfile } from "../lib/personas";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { personaMap, type PersonaId } from "../lib/personas";
 
-type Message = {
-  id: string;
-  sender: "user" | "assistant";
-  text: string;
-  isNew?: boolean;
-};
+/* ─── Types ────────────────────────────────────────────── */
+type Message = { id: string; sender: "user" | "assistant"; text: string };
+type ThreadInfo = { id: string; title: string; updatedAt: number };
 
-type ChatClientProps = {
-  personaId: PersonaId;
-};
+/* ─── Storage helpers ───────────────────────────────────── */
+const msgKey = (pid: PersonaId, tid: string) => `pfy.msg.${pid}.${tid}`;
+const thrKey = (pid: PersonaId) => `pfy.thr.${pid}`;
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-const storageKeyFor = (personaId: PersonaId, threadId?: string) => 
-  threadId ? `personafy.history.${personaId}.${threadId}` : `personafy.history.${personaId}`;
-
-const threadListKey = (personaId: PersonaId) => `personafy.threads.${personaId}`;
-
-function createId() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function readThreads(pid: PersonaId): ThreadInfo[] {
+  try {
+    const raw = localStorage.getItem(thrKey(pid));
+    return raw ? JSON.parse(raw) : [{ id: "default", title: "Chat 1", updatedAt: Date.now() }];
+  } catch { return [{ id: "default", title: "Chat 1", updatedAt: Date.now() }]; }
 }
 
-type ThreadInfo = {
-  id: string;
-  title: string;
-  updatedAt: number;
-};
-
-function loadThreads(personaId: PersonaId): ThreadInfo[] {
-  if (typeof window === "undefined") return [];
+function readMessages(pid: PersonaId, tid: string): Message[] {
   try {
-    const raw = window.localStorage.getItem(threadListKey(personaId));
-    if (!raw) return [{ id: "default", title: "Current Chat", updatedAt: Date.now() }];
-    return JSON.parse(raw);
-  } catch {
-    return [{ id: "default", title: "Current Chat", updatedAt: Date.now() }];
-  }
-}
-
-function loadMessages(personaId: PersonaId, threadId: string) {
-  if (typeof window === "undefined") return [] as Message[];
-
-  try {
-    const raw = window.localStorage.getItem(storageKeyFor(personaId, threadId));
+    const raw = localStorage.getItem(msgKey(pid, tid));
     if (!raw) return [];
-
-    const parsed = JSON.parse(raw) as Message[];
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter(
-      (entry): entry is Message =>
-        !!entry &&
-        (entry.sender === "user" || entry.sender === "assistant") &&
-        typeof entry.text === "string" &&
-        typeof entry.id === "string",
-    );
-  } catch {
-    return [];
-  }
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
 }
 
-function TypewriterMessage({ text, isFinal, isNew }: { text: string; isFinal: boolean, isNew?: boolean }) {
-  const [displayedText, setDisplayedText] = useState(isNew ? "" : text);
+function saveThreads(pid: PersonaId, threads: ThreadInfo[]) {
+  localStorage.setItem(thrKey(pid), JSON.stringify(threads));
+}
 
-  useEffect(() => {
-    if (!isNew) {
-      setDisplayedText(text);
-      return;
-    }
-    
-    if (displayedText.length === text.length) return;
-    
-    // Determine how many chars to add to catch up
-    const charDiff = text.length - displayedText.length;
-    
-    // We let it animate the whole text over time, catching up slightly
-    // but never snapping immediately to end unless we need to reset.
-    if (isFinal && charDiff > 1000) {
-      setDisplayedText(text); // only snap to end if absurdly behind
-      return;
-    }
+function saveMessages(pid: PersonaId, tid: string, msgs: Message[]) {
+  localStorage.setItem(msgKey(pid, tid), JSON.stringify(msgs));
+}
 
-    const timer = setTimeout(() => {
-      setDisplayedText(prev => text.substring(0, prev.length + (charDiff > 25 ? 2 : 1)));
-    }, 35); // Slower, more readable animation
-
-    return () => clearTimeout(timer);
-  }, [text, displayedText, isFinal, isNew]);
-
-  return text.length === 0 ? (
-    <div className="typing-indicator" aria-label="Typing">
-      <span />
-      <span />
-      <span />
-    </div>
-  ) : (
-    <p>{displayedText}</p>
+/* ─── Send icon ─────────────────────────────────────────── */
+function SendIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+    </svg>
   );
 }
 
-export default function ChatClient({ personaId }: ChatClientProps) {
+/* ─── Plus icon ─────────────────────────────────────────── */
+function PlusIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+    </svg>
+  );
+}
+
+/* ─── Main Component ────────────────────────────────────── */
+export default function ChatClient({ personaId }: { personaId: PersonaId }) {
   const persona = personaMap[personaId];
-  const [threads, setThreads] = useState<ThreadInfo[]>([{ id: "default", title: "Current Chat", updatedAt: Date.now() }]);
-  const [activeThreadId, setActiveThreadId] = useState<string>("default");
-  
+
+  const [threads, setThreads] = useState<ThreadInfo[]>([]);
+  const [activeId, setActiveId] = useState("default");
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
-  const [isHydrated, setIsHydrated] = useState(false);
-  const [isThinking, setIsThinking] = useState(false);
-  const [customPrompts, setCustomPrompts] = useState<string[]>([]);
-  const endRef = useRef<HTMLDivElement | null>(null);
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const defaultPrompts = (persona: PersonaProfile) => persona.prompts;
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  /* Hydrate */
   useEffect(() => {
-    const loadedThreads = loadThreads(personaId);
-    setThreads(loadedThreads);    
-    const initialThread = loadedThreads[0]?.id || "default";
-    setActiveThreadId(initialThread);
-    setMessages(loadMessages(personaId, initialThread));
-    
-    // Load custom prompts
-    try {
-      const cached = JSON.parse(window.localStorage.getItem(`personafy.prompts.${personaId}`) || "[]");
-      setCustomPrompts(cached);
-    } catch(e) { }
-
-    setDraft("");
-    setIsHydrated(true);
-    setIsThinking(false);
+    const thr = readThreads(personaId);
+    setThreads(thr);
+    const tid = thr[0]?.id ?? "default";
+    setActiveId(tid);
+    setMessages(readMessages(personaId, tid));
+    setHydrated(true);
   }, [personaId]);
 
-  const switchThread = (tid: string) => {
-    setActiveThreadId(tid);
-    setMessages(loadMessages(personaId, tid));
-    setIsThinking(false);
-    setDraft("");
-  };
-
-  const renameThread = (tid: string, newTitle: string) => {
-    if (!newTitle.trim()) return;
-    setThreads(currentThreads => {
-      const updated = currentThreads.map(t => t.id === tid ? { ...t, title: newTitle.trim(), updatedAt: Date.now() } : t);
-      window.localStorage.setItem(threadListKey(personaId), JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const createNewThread = () => {
-    const newThread: ThreadInfo = { id: createId(), title: "New Conversation", updatedAt: Date.now() };
-    const updatedThreads = [newThread, ...threads];
-    setThreads(updatedThreads);
-    window.localStorage.setItem(threadListKey(personaId), JSON.stringify(updatedThreads));
-    switchThread(newThread.id);
-  };
-
+  /* Persist messages */
   useEffect(() => {
-    if (!isHydrated) return;
-    window.localStorage.setItem(storageKeyFor(personaId, activeThreadId), JSON.stringify(messages));
-    
-    // Update thread title and date on first message
-    if (messages.length > 0) {
-      setThreads(currentThreads => {
-        const updated = currentThreads.map(t => {
-          if (t.id === activeThreadId) {
-            const isFirstMsg = t.title === "New Conversation" || t.title === "Current Chat";
-            return {
-              ...t,
-              title: isFirstMsg ? messages[0].text.substring(0, 30) + "..." : t.title,
-              updatedAt: Date.now()
-            };
-          }
-          return t;
-        });
-        window.localStorage.setItem(threadListKey(personaId), JSON.stringify(updated));
+    if (!hydrated) return;
+    saveMessages(personaId, activeId, messages);
+    if (messages.length === 1) {
+      setThreads(prev => {
+        const updated = prev.map(t =>
+          t.id === activeId && (t.title === "Chat 1" || t.title === "New Chat")
+            ? { ...t, title: messages[0].text.slice(0, 28) + (messages[0].text.length > 28 ? "…" : ""), updatedAt: Date.now() }
+            : t
+        );
+        saveThreads(personaId, updated);
         return updated;
       });
     }
-  }, [messages, personaId, isHydrated, activeThreadId]);
+  }, [messages, hydrated, personaId, activeId]);
 
+  /* Auto-scroll */
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, isThinking]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streaming]);
 
-  const sendMessage = async (override?: string) => {
-    const text = (override ?? draft).trim();
-    if (!text || isThinking) return;
+  /* Auto-resize textarea */
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [draft]);
 
-    const userMessage: Message = { id: createId(), sender: "user", text };
-    setMessages((current) => [...current, userMessage]);
+  const switchThread = useCallback((tid: string) => {
+    setActiveId(tid);
+    setMessages(readMessages(personaId, tid));
     setDraft("");
-    setIsThinking(true);
+    setStreaming(false);
+    setTimeout(() => textareaRef.current?.focus(), 100);
+  }, [personaId]);
 
-    const assistantId = createId();
-    setMessages((current) => [...current, { id: assistantId, sender: "assistant", text: "", isNew: true }]);
+  const newThread = useCallback(() => {
+    const t: ThreadInfo = { id: uid(), title: "New Chat", updatedAt: Date.now() };
+    setThreads(prev => {
+      const updated = [t, ...prev];
+      saveThreads(personaId, updated);
+      return updated;
+    });
+    switchThread(t.id);
+  }, [personaId, switchThread]);
+
+  const renameThread = useCallback((tid: string, currentTitle: string) => {
+    const newName = window.prompt("Rename chat:", currentTitle);
+    if (newName && newName.trim()) {
+      setThreads(prev => {
+        const updated = prev.map(t => t.id === tid ? { ...t, title: newName.trim(), updatedAt: Date.now() } : t);
+        saveThreads(personaId, updated);
+        return updated;
+      });
+    }
+  }, [personaId]);
+
+
+  const send = useCallback(async (override?: string) => {
+    const text = (override ?? draft).trim();
+    if (!text || streaming) return;
+
+    const userMsg: Message = { id: uid(), sender: "user", text };
+    const asstId = uid();
+    const asstMsg: Message = { id: asstId, sender: "assistant", text: "" };
+
+    setMessages(prev => [...prev, userMsg, asstMsg]);
+    setDraft("");
+    setStreaming(true);
 
     try {
-      const response = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:5000/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persona: personaId, message: text }),
-      });
+      const res = await fetch(
+        process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:5000/chat",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ persona: personaId, message: text }) }
+      );
+      if (!res.body) throw new Error("No body");
 
-      if (!response.body) throw new Error("No response body");
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      
-      let done = false;
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: !done });
-          const lines = chunk.split("\n\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const dataText = line.substring(6);
-              if (dataText === "[DONE]") break;
-              try {
-                const data = JSON.parse(dataText);
-                if (data.text) {
-                  setMessages((current) =>
-                    current.map((msg) =>
-                      msg.id === assistantId ? { ...msg, text: msg.text + data.text } : msg
-                    )
-                  );
-                } else if (data.error) {
-                  setMessages((current) =>
-                    current.map((msg) =>
-                      msg.id === assistantId ? { ...msg, text: msg.text + `\n\nError: ${data.error}` } : msg
-                    )
-                  );
-                }
-              } catch (e) {}
-            }
-          }
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = dec.decode(value, { stream: true });
+        for (const line of chunk.split("\n\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") break;
+          try {
+            const { text: t, error: e } = JSON.parse(payload);
+            if (t) setMessages(prev => prev.map(m => m.id === asstId ? { ...m, text: m.text + t } : m));
+            if (e) setMessages(prev => prev.map(m => m.id === asstId ? { ...m, text: m.text + `\n\n⚠️ ${e}` } : m));
+          } catch { /* ignore parse errors */ }
         }
       }
-      
-      // Remove isNew flag when done so on reload it won't animate
-      setMessages((current) =>
-        current.map((msg) =>
-          msg.id === assistantId ? { ...msg, isNew: false } : msg
-        )
-      );
-
-    } catch (error: any) {
-      setMessages((current) =>
-        current.map((msg) =>
-          msg.id === assistantId ? { ...msg, text: `Network error: ${error?.message || String(error)}` } : msg
-        )
-      );
+    } catch (err: any) {
+      setMessages(prev => prev.map(m => m.id === asstId ? { ...m, text: `⚠️ ${err.message}` } : m));
     } finally {
-      setIsThinking(false);
-      composerRef.current?.focus();
+      setStreaming(false);
+      setTimeout(() => textareaRef.current?.focus(), 50);
     }
-  };
+  }, [draft, streaming, personaId]);
 
-  const resetHistory = () => {
-    setMessages([]);
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(storageKeyFor(personaId, activeThreadId));
-    }
-  };
-
-  if (!persona) {
-    return (
-      <div className="chat-empty-state">
-        <p className="eyebrow">Unknown</p>
-        <h2>Persona not found.</h2>
-        <p>Pick one from the home screen.</p>
-      </div>
-    );
-  }
+  if (!persona) return null;
 
   return (
-    <section className="chat-shell">
-      <aside className="chat-profile-panel glass-card">
-        <div className="profile-orb" style={{ background: persona.glow }} />
-        <p className="eyebrow">Persona</p>
-        <h1>{persona.name}</h1>
-        <p className="profile-title">{persona.title}</p>
-        <p className="profile-description">{persona.description}</p>
+    <div className="flex flex-1 gap-4 min-h-0 h-full pt-2">
 
-        <div className="persona-philosophy">
-          {persona.philosophy.map((item) => (
-            <div key={item} className="philosophy-pill">
-              {item}
+      {/* ── Sidebar ── */}
+      <AnimatePresence initial={false}>
+        {sidebarOpen && (
+          <motion.aside
+            key="sidebar"
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 260, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 280, damping: 28 }}
+            className="flex-shrink-0 overflow-hidden"
+          >
+            <div className="glass-panel h-full rounded-2xl flex flex-col p-4 w-[260px] relative overflow-hidden">
+              {/* Persona glow */}
+              <div
+                className="absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-20 blur-3xl pointer-events-none"
+                style={{ background: persona.accent }}
+              />
+
+              {/* Persona info */}
+              <div className="mb-6 relative z-10">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black mb-3"
+                  style={{ background: `${persona.accent}25`, color: persona.accent }}
+                >
+                  {persona.name[0]}
+                </div>
+                <h2 className="text-white font-bold text-lg leading-tight">{persona.name}</h2>
+                <p className="text-gray-500 text-xs mt-1 leading-snug">{persona.title}</p>
+              </div>
+
+              {/* Philosophy pills */}
+              <div className="flex flex-col gap-2 mb-6 relative z-10">
+                {persona.philosophy.map(p => (
+                  <div
+                    key={p}
+                    className="text-xs px-3 py-1.5 rounded-full border border-white/10 bg-white/5 text-gray-400 leading-snug"
+                  >
+                    {p}
+                  </div>
+                ))}
+              </div>
+
+              {/* Thread list */}
+              <div className="flex-1 flex flex-col min-h-0 relative z-10">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[11px] uppercase tracking-widest text-gray-500 font-semibold">Chats</span>
+                  <button
+                    onClick={newThread}
+                    className="w-6 h-6 rounded-full bg-white/8 hover:bg-white/15 flex items-center justify-center text-gray-300 hover:text-white transition-colors border border-white/10"
+                  >
+                    <PlusIcon />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+                  {threads.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => switchThread(t.id)}
+                      onDoubleClick={() => renameThread(t.id, t.title)}
+                      title="Double-click to rename"
+                      className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all truncate ${
+                        t.id === activeId
+                          ? "text-white bg-white/10 border border-white/15"
+                          : "text-gray-400 hover:text-gray-200 hover:bg-white/5 border border-transparent"
+                      }`}
+                    >
+                      {t.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
-        <div className="panel-metrics">
-          <div>
-            <span>History</span>
-            <strong>{messages.length}</strong>
-          </div>
-          <div>
-            <span>Storage</span>
-            <strong>Local</strong>
-          </div>
-        </div>
+      {/* ── Chat panel ── */}
+      <div className="flex-1 flex flex-col min-h-0 glass-panel rounded-2xl overflow-hidden">
 
-        <div className="threads-list" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Conversations</span>
-            <button 
-              type="button" 
-              onClick={createNewThread} 
-              style={{
-                background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: 'var(--text-secondary)',
-                borderRadius: '50px',
-                padding: '2px 8px',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                transition: 'all 0.2sease'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
-            >
-              + New
-            </button>
+        {/* Top bar */}
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/8 flex-shrink-0">
+          <button
+            onClick={() => setSidebarOpen(s => !s)}
+            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors flex-shrink-0"
+            title="Toggle sidebar"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-semibold text-white truncate">{persona.name}</h1>
+            <p className="text-xs text-gray-500 truncate">{persona.title}</p>
           </div>
-          <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px', paddingRight: '4px' }}>
-            {threads.map(t => (
-              <button 
-                key={t.id} 
-                onClick={() => switchThread(t.id)}
-                onDoubleClick={() => {
-                  const newName = window.prompt("Rename conversation:", t.title);
-                  if (newName !== null) renameThread(t.id, newName);
-                }}
-                style={{ 
-                  textAlign: 'left', 
-                  padding: '8px 12px', 
-                  borderRadius: '12px', 
-                  background: t.id === activeThreadId ? 'rgba(255,255,255,0.08)' : 'transparent',
-                  border: t.id === activeThreadId ? `1px solid ${persona.accent}40` : '1px solid transparent',
-                  color: t.id === activeThreadId ? '#fff' : 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  transition: 'all 0.2s ease',
-                  boxShadow: t.id === activeThreadId ? `0 0 10px ${persona.accent}15` : 'none'
-                }}
-                onMouseEnter={(e) => { if(t.id !== activeThreadId) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                onMouseLeave={(e) => { if(t.id !== activeThreadId) e.currentTarget.style.background = 'transparent'; }}
-              >
-                {t.title || "Empty Thread"}
-              </button>
-            ))}
+
+          {/* Live indicator */}
+          <div className="flex items-center gap-2 text-xs text-gray-500 flex-shrink-0">
+            <span
+              className="w-1.5 h-1.5 rounded-full status-pulse"
+              style={{ backgroundColor: streaming ? persona.accent : "#4ade80", color: streaming ? persona.accent : "#4ade80" }}
+            />
+            {streaming ? "Thinking…" : "Ready"}
           </div>
         </div>
 
-        <button type="button" className="secondary-btn" onClick={resetHistory} style={{ marginTop: '20px' }}>
-          Clear current history
-        </button>
-      </aside>
-
-      <div className="chat-workspace">
-        <div className="prompt-rail glass-card">
-          <div className="prompt-rail-copy">
-            <p className="eyebrow">Quick prompts</p>
-            <h3>Start with one of these.</h3>
-            <div className="chat-status" style={{ marginTop: '10px' }}>
-              <span className="status-dot" style={{ background: persona.accent }} />
-              <span>{isThinking ? "Generating reply" : "Ready"}</span>
-            </div>
-          </div>
-          <div className="prompt-chip-grid">
-            {defaultPrompts(persona).map((prompt) => (
-              <button key={prompt} type="button" className="prompt-chip" onClick={() => sendMessage(prompt)}>
-                {prompt}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="chat-stream glass-card" aria-live="polite" aria-busy={isThinking}>
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
           {messages.length === 0 ? (
-            <div className="empty-thread">
-              <div className="empty-thread-badge">New thread</div>
-              <h3>No messages yet.</h3>
-              <p>Select a prompt or type your own.</p>
+            <div className="h-full flex flex-col items-center justify-center text-center py-16 select-none">
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-5 font-black"
+                style={{ background: `${persona.accent}20`, color: persona.accent }}
+              >
+                {persona.name[0]}
+              </div>
+              <p className="text-white font-bold text-xl mb-1">{persona.name}</p>
+              <p className="text-gray-500 text-sm mb-8">{persona.tagline}</p>
+              <div className="flex flex-wrap justify-center gap-2 max-w-sm">
+                {persona.prompts.map(p => (
+                  <button
+                    key={p}
+                    onClick={() => send(p)}
+                    className="text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-4 py-2 text-gray-300 hover:text-white transition-all hover:scale-105 active:scale-95"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
-            messages.map((message) => (
-              <article key={message.id} className={`message-bubble ${message.sender}`}>
-                <div className="message-meta">{message.sender === "user" ? "You" : persona.name}</div>
-                {message.sender === "assistant" ? <TypewriterMessage text={message.text} isFinal={!isThinking} isNew={message.isNew} /> : <p>{message.text}</p>}
-              </article>
-            ))
+            <AnimatePresence initial={false}>
+              {messages.map((msg) => (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  {/* Avatar for assistant */}
+                  {msg.sender === "assistant" && (
+                    <div
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black mr-2 mt-1 flex-shrink-0"
+                      style={{ background: `${persona.accent}25`, color: persona.accent }}
+                    >
+                      {persona.name[0]}
+                    </div>
+                  )}
+
+                  <div
+                    className={`max-w-[78%] px-4 py-3 rounded-2xl shadow-sm ${
+                      msg.sender === "user"
+                        ? "bg-blue-600 text-white rounded-br-md"
+                        : "bg-[#1c2433] text-gray-100 rounded-bl-md border border-white/8"
+                    }`}
+                  >
+                    {/* Typing dots for empty assistant message while streaming */}
+                    {msg.sender === "assistant" && msg.text === "" && streaming ? (
+                      <div className="flex items-center gap-1 h-5 px-1">
+                        <span className="typing-dot w-2 h-2 rounded-full bg-gray-400 inline-block" />
+                        <span className="typing-dot w-2 h-2 rounded-full bg-gray-400 inline-block" />
+                        <span className="typing-dot w-2 h-2 rounded-full bg-gray-400 inline-block" />
+                      </div>
+                    ) : (
+                      <p className="msg-content">{msg.text}</p>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           )}
-          <div ref={endRef} />
+          <div ref={bottomRef} />
         </div>
 
-        <footer className="composer glass-card">
-          <label className="sr-only" htmlFor={`composer-${personaId}`}>
-            Message composer for {persona.name}
-          </label>
-          <textarea
-            id={`composer-${personaId}`}
-            ref={composerRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void sendMessage();
-              }
-            }}
-            placeholder={`Ask ${persona.name} something specific...`}
-            rows={1}
-          />
-          <div className="composer-actions">
-            <span className="composer-hint">Enter to send, Shift+Enter for a line.</span>
-            <button type="button" className="primary-btn" onClick={() => sendMessage()} disabled={!draft.trim() || isThinking}>
-              Send message
-            </button>
+        {/* Composer */}
+        <div className="flex-shrink-0 px-4 py-3 border-t border-white/8 bg-black/20">
+          <div
+            className="flex items-end gap-3 bg-[#111827] border rounded-2xl px-4 py-2 focus-within:border-blue-500/60 transition-colors"
+            style={{ borderColor: "rgba(255,255,255,0.1)" }}
+          >
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+              }}
+              placeholder={`Ask ${persona.name} something…`}
+              className="flex-1 bg-transparent text-white placeholder-gray-600 outline-none resize-none min-h-[36px] max-h-40 py-1 text-sm leading-relaxed"
+              rows={1}
+              disabled={streaming}
+            />
+            <motion.button
+              onClick={() => send()}
+              disabled={!draft.trim() || streaming}
+              whileTap={{ scale: 0.88 }}
+              whileHover={{ scale: 1.08 }}
+              transition={{ type: "spring", stiffness: 400, damping: 18 }}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0 disabled:opacity-30 disabled:cursor-not-allowed transition-colors mb-0.5"
+              style={{ backgroundColor: persona.accent }}
+            >
+              <SendIcon className="w-4 h-4" />
+            </motion.button>
           </div>
-        </footer>
+          <p className="text-center text-gray-600 text-[11px] mt-2">
+            Enter to send · Shift+Enter for new line
+          </p>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }

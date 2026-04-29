@@ -43,8 +43,3 @@ Thumbs.db
 *.tgz
 *.zip
 *.gz
-
-# Optional: lock files (choose based on your team)
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml

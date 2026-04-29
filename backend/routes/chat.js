@@ -53,7 +53,10 @@ router.post("/", async (req, res) => {
 
     for await (const chunk of result.stream) {
       const chunkText = chunk.text();
-      res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+      for (const char of chunkText) {
+        res.write(`data: ${JSON.stringify({ text: char })}\n\n`);
+        await new Promise(r => setTimeout(r, 15));
+      }
     }
     res.write('data: [DONE]\n\n');
     res.end();

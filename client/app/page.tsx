@@ -1,106 +1,102 @@
+"use client";
+
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { personas } from "./lib/personas";
 
-const highlights = [
-  {
-    title: "Separate history",
-    copy: "Each persona keeps its own local thread.",
-  },
-  {
-    title: "Better prompts",
-    copy: "Starter prompts now match the voice.",
-  },
-];
+const ICONS = ["⚡", "🧠", "✨"];
 
 export default function Home() {
   return (
-    <main className="landing-page">
-      <section className="landing-hero">
-        <div className="hero-copy glass-card">
-          <p className="eyebrow">Personafy</p>
-          <h1>Distinct personas. One polished chat.</h1>
-          <p className="hero-description">Pick a voice, keep its history, and switch without losing context.</p>
+    <main className="relative min-h-screen flex flex-col items-center justify-center px-6 py-16 overflow-hidden">
+      {/* Ambient background blobs */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-32 -left-32 w-[600px] h-[600px] rounded-full bg-blue-600 opacity-[0.08] blur-[120px]" />
+        <div className="absolute -bottom-32 -right-32 w-[600px] h-[600px] rounded-full bg-purple-600 opacity-[0.08] blur-[120px]" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-cyan-500 opacity-[0.04] blur-[100px]" />
+      </div>
 
-          <div className="hero-actions">
-            <Link href={`/person/${personas[0].id}`} className="primary-btn">
-              Open first persona
-            </Link>
-            <a href="#personas" className="secondary-btn">
-              All personas
-            </a>
-          </div>
-
-          <div className="hero-stats">
-            <div>
-              <strong>{personas.length}</strong>
-              <span>persona channels</span>
-            </div>
-            <div>
-              <strong>Local</strong>
-              <span>saved locally</span>
-            </div>
-            <div>
-              <strong>Animated</strong>
-              <span>smooth motion</span>
-            </div>
-          </div>
+      {/* Header */}
+      <motion.div
+        className="text-center mb-20"
+        initial={{ opacity: 0, y: -30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease: "easeOut" }}
+      >
+        <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 text-xs text-gray-400 tracking-widest uppercase mb-8">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          AI Persona Chat
         </div>
+        <h1 className="text-6xl md:text-8xl font-black tracking-tighter bg-gradient-to-br from-white via-gray-200 to-gray-500 bg-clip-text text-transparent leading-none mb-6">
+          Personafy
+        </h1>
+        <p className="text-lg md:text-xl text-gray-400 max-w-lg mx-auto font-light leading-relaxed">
+          Distinct voices. Fluid conversations. Pick a persona and dive in.
+        </p>
+      </motion.div>
 
-        <div className="hero-side glass-card">
-          <div className="floating-orb floating-orb-one" />
-          <div className="floating-orb floating-orb-two" />
-          <p className="eyebrow">Live preview</p>
-          <h2>Built to feel finished.</h2>
-          <p>Preview the persona cards and open any channel.</p>
+      {/* Persona cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
+        {personas.map((persona, i) => (
+          <motion.div
+            key={persona.id}
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 + i * 0.12, duration: 0.6, ease: "easeOut" }}
+          >
+            <Link href={`/person/${persona.id}`} className="block h-full group">
+              <motion.div
+                whileHover={{ y: -6, scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                className="glass-panel rounded-3xl p-8 h-full flex flex-col gap-5 relative overflow-hidden cursor-pointer"
+                style={{ borderColor: `${persona.accent}30` }}
+              >
+                {/* Accent glow on hover */}
+                <div
+                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-3xl"
+                  style={{ background: `radial-gradient(circle at 80% 20%, ${persona.accent}18, transparent 60%)` }}
+                />
 
-          <div className="mini-card-stack">
-            {personas.map((persona) => (
-              <Link key={persona.id} href={`/person/${persona.id}`} className="mini-persona-card" style={{ borderColor: persona.glow }}>
-                <div>
-                  <strong>{persona.name}</strong>
-                  <span>{persona.title}</span>
+                {/* Icon badge */}
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold flex-shrink-0"
+                  style={{ background: `${persona.accent}20`, color: persona.accent }}
+                >
+                  {ICONS[i]}
                 </div>
-                <span aria-hidden="true">→</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      <section className="highlights-grid">
-        {highlights.map((item) => (
-          <article key={item.title} className="glass-card highlight-card">
-            <p className="eyebrow">Experience</p>
-            <h3>{item.title}</h3>
-            <p>{item.copy}</p>
-          </article>
-        ))}
-      </section>
+                {/* Text */}
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-widest mb-2" style={{ color: persona.accent }}>
+                    Persona {String(i + 1).padStart(2, "0")}
+                  </p>
+                  <h2 className="text-2xl font-bold text-white mb-2 leading-tight">{persona.name}</h2>
+                  <p className="text-sm text-gray-400 leading-relaxed">{persona.title}</p>
+                </div>
 
-      <section id="personas" className="persona-showcase">
-        <div className="section-heading">
-          <p className="eyebrow">Choose your voice</p>
-          <h2>Three personas, three entry points.</h2>
-        </div>
+                {/* Sample prompts */}
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-white/5">
+                  {persona.prompts.slice(0, 2).map(p => (
+                    <span key={p} className="text-xs bg-white/5 border border-white/10 rounded-full px-3 py-1 text-gray-400 truncate max-w-full">
+                      {p}
+                    </span>
+                  ))}
+                </div>
 
-        <div className="persona-grid">
-          {personas.map((persona, index) => (
-            <Link key={persona.id} href={`/person/${persona.id}`} className="persona-preview glass-card" style={{ ["--accent" as string]: persona.accent, ["--glow" as string]: persona.glow }}>
-              <div className="persona-preview-top">
-                <span className="persona-index">0{index + 1}</span>
-                <span className="persona-dot" />
-              </div>
-              <h3>{persona.name}</h3>
-              <p>{persona.tagline}</p>
-              <div className="persona-snippets">
-                {persona.prompts.slice(0, 2).map((prompt) => (
-                  <span key={prompt}>{prompt}</span>
-                ))}
-              </div>
+                {/* CTA */}
+                <div
+                  className="flex items-center gap-2 text-sm font-semibold transition-all group-hover:gap-3"
+                  style={{ color: persona.accent }}
+                >
+                  Start chatting
+                  <span className="transition-transform group-hover:translate-x-1">→</span>
+                </div>
+              </motion.div>
             </Link>
-          ))}
-        </div>
-      </section>
+          </motion.div>
+        ))}
+      </div>
     </main>
   );
 }
