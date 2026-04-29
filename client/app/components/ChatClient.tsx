@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { personaMap, type PersonaId } from "../lib/personas";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 /* ─── Types ────────────────────────────────────────────── */
 type Message = { id: string; sender: "user" | "assistant"; text: string };
@@ -356,7 +358,11 @@ export default function ChatClient({ personaId }: { personaId: PersonaId }) {
                         <span className="typing-dot w-2 h-2 rounded-full bg-gray-400 inline-block" />
                       </div>
                     ) : (
-                      <p className="msg-content">{msg.text}</p>
+                      <div className={`prose prose-sm max-w-none prose-p:leading-relaxed prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/10 prose-code:text-white/90 prose-code:bg-black/30 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-a:text-blue-400 hover:prose-a:text-blue-300 prose-invert [&>*:first-child]:mt-0 [&>*:last-child]:mb-0`}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.text}
+                        </ReactMarkdown>
+                      </div>
                     )}
                   </div>
                 </motion.div>

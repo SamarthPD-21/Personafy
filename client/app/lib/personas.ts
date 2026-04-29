@@ -22,8 +22,8 @@ export const personas: PersonaProfile[] = [
     accent: "#4cc9f0",
     glow: "rgba(76, 201, 240, 0.35)",
     prompts: [
-      "Fix my DSA routine.",
-      "Give me a 7-day comeback plan.",
+      "Critique my current DSA practice routine and tell me what I'm doing wrong.",
+      "I've slacked off for weeks. Give me a brutal 7-day comeback plan.",
     ],
     philosophy: [
       "Consistency beats motivation.",
@@ -39,8 +39,8 @@ export const personas: PersonaProfile[] = [
     accent: "#f97316",
     glow: "rgba(249, 115, 22, 0.32)",
     prompts: [
-      "Build an interview prep roadmap.",
-      "How do I revise without forgetting?",
+      "Design a comprehensive 3-month interview prep roadmap for top tech companies.",
+      "Explain your system for revising complex topics without forgetting them.",
     ],
     philosophy: [
       "Clarity beats speed.",
@@ -56,8 +56,8 @@ export const personas: PersonaProfile[] = [
     accent: "#34d399",
     glow: "rgba(52, 211, 153, 0.33)",
     prompts: [
-      "Explain recursion simply.",
-      "Make graphs intuitive.",
+      "Explain the concept of recursion simply, with an intuitive real-world example.",
+      "I'm struggling with Graph algorithms. Can you help me visualize them?",
     ],
     philosophy: [
       "Intuition matters.",
