@@ -154,7 +154,7 @@ export default function ChatClient({ personaId }: { personaId: PersonaId }) {
 
     try {
       const res = await fetch(
-        process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:5000/chat",
+        `${process.env.NEXT_BACKEND_API || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000"}/chat`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ persona: personaId, message: text }) }
       );
       if (!res.body) throw new Error("No body");

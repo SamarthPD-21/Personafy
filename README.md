@@ -85,7 +85,3 @@ npm run dev
 3. **State Management**: The React frontend captures the stream, updates the UI in real-time with Framer Motion animations, and persists the data to `localStorage`.
 
 ---
-
-<div align="center">
-  <p>Built with ❤️ and Gemini</p>
-</div>
