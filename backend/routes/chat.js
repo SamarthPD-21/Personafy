@@ -35,9 +35,9 @@ router.post("/", async (req, res) => {
       systemInstruction: systemPrompt,
     });
 
-    const result = await model.generateContent({
+    const result = await model.generateContentStream({
       generationConfig: {
-        maxOutputTokens: 256,
+        maxOutputTokens: 2048,
       },
       contents: [
         {
@@ -47,15 +47,27 @@ router.post("/", async (req, res) => {
       ],
     });
 
-    res.json({
-      reply: result.response.text(),
-    });
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+    }
+    res.write('data: [DONE]\n\n');
+    res.end();
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({
-      error: "Something went wrong. Try again.",
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Something went wrong. Try again.",
+      });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: "Something went wrong. Try again." })}\n\n`);
+      res.end();
+    }
   }
 });
 

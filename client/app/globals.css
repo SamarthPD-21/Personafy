@@ -613,8 +613,8 @@ button {
 
 .chat-stream {
   min-height: 520px;
-  max-height: 58vh;
-  overflow: auto;
+  height: auto;
+  overflow: visible;
   padding: 22px;
   display: flex;
   flex-direction: column;
@@ -706,15 +706,20 @@ button {
   padding: 20px;
   display: grid;
   gap: 14px;
+  position: sticky;
+  bottom: 20px;
+  z-index: 10;
+  background: var(--bg-card);
+  backdrop-filter: blur(24px);
 }
 
 .composer textarea {
   width: 100%;
   resize: vertical;
-  min-height: 112px;
+  min-height: 56px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 22px;
-  padding: 18px;
+  border-radius: 16px;
+  padding: 14px;
   color: var(--foreground);
   background: rgba(255, 255, 255, 0.04);
   outline: none;
